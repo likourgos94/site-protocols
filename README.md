@@ -7,14 +7,16 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 ## What it does
 
 - **New protocol** with an automatic number, e.g. `LAHLU01-2026-001`
+- **Drafts** button under it: protocols without a PDF yet. The start screen lists the finished ones
 - Project, type, date, time, location
-- Attendees (names you used before are suggested, company and role are filled in)
+- Attendees with email (names you used before are suggested, company, role and email are filled in)
 - Topics and findings, each marked OK or defect, with a note and photos
 - Action items: what, who, by when, with photos
 - Remarks
 - Finger signatures: pick two signers from the attendees
 - **Improve text with AI**: Cloudflare's built-in AI corrects and tidies the texts, you check each change before it is used
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
+- **Send by email**: shows the attendees' addresses, a subject and a message you can change, then opens Mail with the PDF attached. A web app cannot fill in Mail's "To" field, so the addresses are copied and you paste them
 - Saves automatically on the phone and works without signal
 
 ## Plan
