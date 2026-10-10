@@ -105,6 +105,7 @@ function defaultSettings() {
     role: "Bauleitung / Site manager",
     projects: ["LAHLU01 Lahnau"],
     people: [], // everyone who was ever an attendee, for quick filling
+    aiKey: "", // optional: the APP_KEY, only needed if one is set in Cloudflare
   };
 }
 
@@ -202,7 +203,7 @@ async function newProtocol() {
     topics: [LISTS.topics.blank()],
     actions: [],
     remarks: "",
-    signatures: { mine: null, other: null, otherName: "" },
+    signatures: { mine: null, other: null, mineName: settings.name, otherName: "" },
     status: "draft",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -215,6 +216,7 @@ async function newProtocol() {
 async function openEditor(p) {
   current = p;
   p.signatures ||= { mine: null, other: null, otherName: "" }; // protocols from before step 2
+  p.signatures.mineName ??= settings.name; // protocols from before signers could be picked
   await loadPhotos(p.id);
 
   // Project list: settings + the protocol's own project (in case it was removed)
@@ -229,9 +231,7 @@ async function openEditor(p) {
   $("#f-time").value = p.time;
   $("#f-location").value = p.location;
   $("#f-remarks").value = p.remarks;
-  $("#f-other-name").value = p.signatures.otherName;
   $("#btn-share").hidden = true;
-  $("#sig-me-name").textContent = settings.name || "–";
   for (const kind of Object.keys(LISTS)) renderItems(kind);
   updatePeopleList();
   show("edit");
@@ -288,6 +288,7 @@ function renderItems(kind) {
     if (cfg.photos) card.append(photoRow(kind, item));
     box.append(card);
   });
+  if (kind === "attendees") updatePeopleList();
 }
 
 // When a known name is picked, fill in company and role.
@@ -305,6 +306,22 @@ function updatePeopleList() {
   const names = new Set(settings.people.map((x) => x.name));
   if (current) for (const a of current.attendees) if (a.name.trim()) names.add(a.name.trim());
   $("#people-names").replaceChildren(...[...names].sort().map((n) => el("option", { value: n })));
+  updateSignerLists();
+}
+
+// The two "who signs" lists offer this protocol's attendees.
+function updateSignerLists() {
+  if (!current) return;
+  const attendees = current.attendees.map((a) => a.name.trim()).filter(Boolean);
+  for (const [sel, key] of [["#f-sig-mine-name", "mineName"], ["#f-sig-other-name", "otherName"]]) {
+    const chosen = current.signatures[key] || "";
+    const names = [...new Set([...attendees, ...(chosen ? [chosen] : [])])];
+    $(sel).replaceChildren(
+      el("option", { value: "" }, "– wählen / choose –"),
+      ...names.map((n) => el("option", { value: n }, n)),
+    );
+    $(sel).value = chosen;
+  }
 }
 
 // Remember attendees for next time.
@@ -695,7 +712,14 @@ function buildPdf(p, s) {
   y += sigH + 6;
   doc.setDrawColor(0);
   doc.setLineWidth(0.3);
-  [[M, s.name, sig.mine], [M + W - sigW, sig.otherName, sig.other]].forEach(([x, name, image]) => {
+  const signer = (name) => {
+    const person = p.attendees.find((a) => a.name.trim() === name);
+    return [name, person?.company].filter(Boolean).join(", ");
+  };
+  [
+    [M, signer(sig.mineName ?? s.name), sig.mine],
+    [M + W - sigW, signer(sig.otherName), sig.other],
+  ].forEach(([x, name, image]) => {
     if (image) {
       const props = doc.getImageProperties(image);
       const scale = Math.min(sigW / props.width, sigH / props.height);
@@ -771,6 +795,106 @@ async function createPdf() {
   await sharing;
 }
 
+// ---------- Improve text with AI ----------
+
+const AI_BUTTON_TEXT = "✨ Text mit KI verbessern / Improve text with AI";
+
+const AI_ERRORS = {
+  not_configured: "KI ist in Cloudflare noch nicht eingerichtet. / AI is not set up in Cloudflare yet.",
+  wrong_key: "Zugangsschlüssel fehlt oder ist falsch (⚙︎). / Access key missing or wrong (⚙︎).",
+  ai_key_invalid: "Der Claude-API-Schlüssel in Cloudflare ist ungültig. / The Claude API key in Cloudflare is invalid.",
+  ai_busy: "KI ist gerade ausgelastet, bitte gleich nochmal. / AI is busy, please try again shortly.",
+  too_long: "Zu viel Text auf einmal. / Too much text at once.",
+  ai_daily_limit: "Die kostenlose KI-Menge für heute ist aufgebraucht. Morgen wieder möglich. / Today's free AI allowance is used up. Try again tomorrow.",
+  ai_bad_answer: "Die KI hat keine brauchbare Antwort gegeben. Bitte nochmal versuchen. / The AI did not give a usable answer. Please try again.",
+};
+
+// Every text field the AI may improve, with a label and the item it belongs to.
+function aiFields(p) {
+  const fields = [];
+  p.topics.forEach((t, i) => {
+    fields.push({ item: t, key: "title", label: `Thema ${i + 1} – Titel / Topic ${i + 1} – title` });
+    fields.push({ item: t, key: "note", label: `Thema ${i + 1} – Notiz / Topic ${i + 1} – note` });
+  });
+  p.actions.forEach((a, i) => fields.push({ item: a, key: "task", label: `Maßnahme ${i + 1} / Action item ${i + 1}` }));
+  fields.push({ item: p, key: "remarks", label: "Bemerkungen / Remarks" });
+  return fields.map((f) => ({ ...f, before: f.item[f.key] || "" }));
+}
+
+async function improveWithAi() {
+  const p = current;
+  const fields = aiFields(p);
+  if (!fields.some((f) => f.before.trim())) {
+    alert("Noch kein Text. / No text yet.");
+    return;
+  }
+  await saveNow();
+  const request = {
+    topics: p.topics.map((t) => ({ title: t.title || "", note: t.note || "" })),
+    actions: p.actions.map((a) => ({ task: a.task || "" })),
+    remarks: p.remarks || "",
+  };
+
+  const btn = $("#btn-ai");
+  btn.disabled = true;
+  btn.textContent = "KI arbeitet … / AI is working …";
+  try {
+    const res = await fetch("/api/polish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(settings.aiKey && { "X-App-Key": settings.aiKey }) },
+      body: JSON.stringify(request),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(AI_ERRORS[data.error] || `KI-Fehler / AI error (${data.error || res.status})`);
+    if (current !== p) return; // the protocol was closed meanwhile
+
+    // Same order as aiFields(): title, note per topic, then tasks, then remarks.
+    const after = [...data.topics.flatMap((t) => [t.title, t.note]), ...data.actions.map((a) => a.task), data.remarks];
+    showAiReview(fields.map((f, i) => ({ ...f, after: after[i] ?? f.before })));
+  } catch (e) {
+    alert(e instanceof TypeError ? "Keine Internetverbindung. / No internet connection." : e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = AI_BUTTON_TEXT;
+  }
+}
+
+// Shows each suggested change: old text, new text (editable), and a tick to use it.
+function showAiReview(fields) {
+  const changes = fields.filter((f) => f.after.trim() !== f.before.trim());
+  if (!changes.length) {
+    alert("Keine Änderungen nötig. / No changes needed.");
+    return;
+  }
+  const box = $("#ai-changes");
+  box.replaceChildren();
+  for (const change of changes) {
+    const card = el("div", { class: "change" });
+    const head = el("label", { class: "change-head" });
+    change.use = el("input", { type: "checkbox", checked: "" });
+    head.append(change.use, document.createTextNode(change.label));
+    change.input = el("textarea", { rows: Math.min(6, Math.max(2, Math.ceil(change.after.length / 40))) });
+    change.input.value = change.after;
+    card.append(head, el("div", { class: "old" }, change.before || "–"), change.input);
+    box.append(card);
+  }
+
+  $("#ai-apply").onclick = () => {
+    for (const c of changes) {
+      // Only replace text you did not change while the AI was working.
+      if (c.use.checked && (c.item[c.key] || "") === c.before) c.item[c.key] = c.input.value;
+    }
+    renderItems("topics");
+    renderItems("actions");
+    $("#f-remarks").value = current.remarks;
+    save();
+    $("#ai-review").hidden = true;
+  };
+  $("#ai-discard").onclick = () => { $("#ai-review").hidden = true; };
+  $("#ai-review").hidden = false;
+  $("#ai-review").scrollTop = 0;
+}
+
 // ---------- Settings ----------
 
 function openSettings() {
@@ -778,6 +902,7 @@ function openSettings() {
   $("#s-company").value = settings.company;
   $("#s-role").value = settings.role;
   $("#s-projects").value = settings.projects.join("\n");
+  $("#s-ai-key").value = settings.aiKey || "";
   show("settings");
 }
 
@@ -786,6 +911,7 @@ function readSettingsForm() {
   settings.company = $("#s-company").value.trim();
   settings.role = $("#s-role").value.trim();
   settings.projects = $("#s-projects").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  settings.aiKey = $("#s-ai-key").value.trim();
   db.putSettings(settings);
 }
 
@@ -832,11 +958,25 @@ async function init() {
       save();
     });
   }
-  $("#f-other-name").addEventListener("input", () => { current.signatures.otherName = $("#f-other-name").value; save(); });
+  for (const [sel, key, sigKey] of [["#f-sig-mine-name", "mineName", "mine"], ["#f-sig-other-name", "otherName", "other"]]) {
+    $(sel).addEventListener("change", () => {
+      // A drawn signature belongs to the person who signed it.
+      if (current.signatures[sigKey] && !confirm("Unterschrift löschen? / Delete the signature?")) {
+        $(sel).value = current.signatures[key] || "";
+        return;
+      }
+      current.signatures[key] = $(sel).value;
+      current.signatures[sigKey] = null;
+      drawSignature($(`canvas[data-sig="${sigKey}"]`));
+      save();
+    });
+  }
   $("#viewer").addEventListener("click", () => { $("#viewer").hidden = true; });
 
   $("#btn-new").addEventListener("click", newProtocol);
   $("#btn-pdf").addEventListener("click", createPdf);
+  $("#btn-ai").textContent = AI_BUTTON_TEXT;
+  $("#btn-ai").addEventListener("click", improveWithAi);
   $("#btn-settings").addEventListener("click", openSettings);
   $("#btn-delete").addEventListener("click", async () => {
     if (!confirm(`${current.no} löschen? / Delete?`)) return;
@@ -855,7 +995,7 @@ async function init() {
     await renderProtocolList();
     show("list");
   });
-  for (const id of ["#s-name", "#s-company", "#s-role", "#s-projects"]) {
+  for (const id of ["#s-name", "#s-company", "#s-role", "#s-projects", "#s-ai-key"]) {
     $(id).addEventListener("input", readSettingsForm);
   }
 

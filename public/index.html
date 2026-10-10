@@ -73,16 +73,19 @@
 
     <section class="card">
       <h2>Unterschriften / Signatures</h2>
-      <p class="sig-label">Ersteller / Prepared by: <span id="sig-me-name"></span></p>
+      <label>Unterschrift 1 – wer? / Signature 1 – who?
+        <select id="f-sig-mine-name"></select>
+      </label>
       <canvas class="sig" data-sig="mine"></canvas>
       <button class="remove" type="button" data-clear="mine">Löschen / Clear</button>
-      <label class="sig-other">Name (Teilnehmer / Attendee)
-        <input id="f-other-name" type="text" list="people-names">
+      <label class="sig-other">Unterschrift 2 – wer? / Signature 2 – who?
+        <select id="f-sig-other-name"></select>
       </label>
       <canvas class="sig" data-sig="other"></canvas>
       <button class="remove" type="button" data-clear="other">Löschen / Clear</button>
     </section>
 
+    <button id="btn-ai" class="secondary big" type="button"></button>
     <button id="btn-pdf" class="primary big">PDF erstellen &amp; teilen / Create &amp; share PDF</button>
     <button id="btn-share" class="primary big" hidden>PDF teilen / Share PDF</button>
     <button id="btn-delete" class="danger">Protokoll löschen / Delete protocol</button>
@@ -101,10 +104,29 @@
       <p class="hint">Ein Projekt pro Zeile. Das erste Wort wird Teil der Protokollnummer. / One project per line. The first word becomes part of the protocol number.</p>
       <textarea id="s-projects" rows="4"></textarea>
     </section>
+    <section class="card">
+      <h2>KI / AI</h2>
+      <p class="hint">„Text mit KI verbessern“ schickt den Text an die KI von Cloudflare. Kein Konto und kein Schlüssel nötig. / "Improve text with AI" sends the text to Cloudflare's AI. No account or key needed.</p>
+      <label>Zugangsschlüssel (optional) / Access key (optional)
+        <input id="s-ai-key" type="password" autocomplete="off">
+      </label>
+      <p class="hint">Nur nötig, wenn in Cloudflare ein APP_KEY gesetzt ist. / Only needed if you set an APP_KEY in Cloudflare.</p>
+    </section>
     <p class="hint">Alles wird automatisch auf diesem iPhone gespeichert. / Everything is saved automatically on this iPhone.</p>
   </main>
 
   <datalist id="people-names"></datalist>
+
+  <!-- AI suggestions to check before applying -->
+  <div id="ai-review" class="sheet" hidden>
+    <div class="sheet-body">
+      <h2>KI-Vorschläge / AI suggestions</h2>
+      <p class="hint">Prüfen, bei Bedarf anpassen, dann übernehmen. / Check, adjust if needed, then apply.</p>
+      <div id="ai-changes"></div>
+      <button id="ai-apply" class="primary big" type="button">Übernehmen / Apply</button>
+      <button id="ai-discard" class="danger" type="button">Verwerfen / Discard</button>
+    </div>
+  </div>
 
   <!-- Full-screen photo, tap to close -->
   <div id="viewer" hidden><img alt=""></div>

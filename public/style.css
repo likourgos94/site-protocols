@@ -147,5 +147,34 @@ button { font: inherit; cursor: pointer; }
   background: #fff;
   touch-action: none; /* finger draws instead of scrolling */
 }
-.sig-label { font-size: 13px; color: var(--muted); margin: 0 0 4px; }
 .sig-other { margin-top: 12px; }
+
+.secondary {
+  display: block; width: 100%;
+  padding: 14px; margin-bottom: 12px;
+  border: 1px solid var(--brand); border-radius: 10px;
+  background: #fff; color: var(--brand); font-weight: 600;
+}
+button:disabled { opacity: .6; }
+
+/* AI suggestions sheet */
+.sheet {
+  position: fixed; inset: 0; z-index: 40;
+  overflow-y: auto;
+  background: var(--bg);
+  padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 12px);
+}
+.sheet-body { max-width: 700px; margin: 0 auto; }
+.sheet h2 { color: var(--brand); font-size: 18px; margin: 4px 0; }
+.change { background: var(--card); border-radius: 10px; padding: 10px; margin-bottom: 10px; }
+.change-head { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 600; font-size: 14px; margin: 0 0 6px; }
+.change-head input { -webkit-appearance: checkbox; appearance: auto; width: 22px; height: 22px; margin: 0; flex: none; }
+.change .old { color: var(--muted); text-decoration: line-through; font-size: 14px; white-space: pre-wrap; margin-bottom: 4px; }
+
+/* Arrow on dropdowns (iPhone hides it because of appearance: none) */
+select {
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
