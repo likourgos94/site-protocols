@@ -105,7 +105,7 @@ function defaultSettings() {
     role: "Bauleitung / Site manager",
     projects: ["LAHLU01 Lahnau"],
     people: [], // everyone who was ever an attendee, for quick filling
-    aiKey: "", // the APP_KEY set in Cloudflare, needed for "Improve text with AI"
+    aiKey: "", // optional: the APP_KEY, only needed if one is set in Cloudflare
   };
 }
 
@@ -801,10 +801,12 @@ const AI_BUTTON_TEXT = "✨ Text mit KI verbessern / Improve text with AI";
 
 const AI_ERRORS = {
   not_configured: "KI ist in Cloudflare noch nicht eingerichtet. / AI is not set up in Cloudflare yet.",
-  wrong_key: "Falscher Zugangsschlüssel (⚙︎). / Wrong access key (⚙︎).",
+  wrong_key: "Zugangsschlüssel fehlt oder ist falsch (⚙︎). / Access key missing or wrong (⚙︎).",
   ai_key_invalid: "Der Claude-API-Schlüssel in Cloudflare ist ungültig. / The Claude API key in Cloudflare is invalid.",
   ai_busy: "KI ist gerade ausgelastet, bitte gleich nochmal. / AI is busy, please try again shortly.",
   too_long: "Zu viel Text auf einmal. / Too much text at once.",
+  ai_daily_limit: "Die kostenlose KI-Menge für heute ist aufgebraucht. Morgen wieder möglich. / Today's free AI allowance is used up. Try again tomorrow.",
+  ai_bad_answer: "Die KI hat keine brauchbare Antwort gegeben. Bitte nochmal versuchen. / The AI did not give a usable answer. Please try again.",
 };
 
 // Every text field the AI may improve, with a label and the item it belongs to.
@@ -820,10 +822,6 @@ function aiFields(p) {
 }
 
 async function improveWithAi() {
-  if (!settings.aiKey) {
-    alert("Bitte zuerst den Zugangsschlüssel unter ⚙︎ eintragen. / Please enter the access key in ⚙︎ first.");
-    return;
-  }
   const p = current;
   const fields = aiFields(p);
   if (!fields.some((f) => f.before.trim())) {
@@ -843,7 +841,7 @@ async function improveWithAi() {
   try {
     const res = await fetch("/api/polish", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "X-App-Key": settings.aiKey },
+      headers: { "Content-Type": "application/json", ...(settings.aiKey && { "X-App-Key": settings.aiKey }) },
       body: JSON.stringify(request),
     });
     const data = await res.json().catch(() => ({}));

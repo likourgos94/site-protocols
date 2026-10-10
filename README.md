@@ -13,7 +13,7 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 - Action items: what, who, by when, with photos
 - Remarks
 - Finger signatures: pick two signers from the attendees
-- **Improve text with AI**: Claude corrects and tidies the texts, you check each change before it is used
+- **Improve text with AI**: Cloudflare's built-in AI corrects and tidies the texts, you check each change before it is used
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
 - Saves automatically on the phone and works without signal
 
@@ -34,15 +34,19 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 
 From then on, every change on the `main` branch goes online automatically.
 
-## Turn on "Improve text with AI" (one time)
+## "Improve text with AI"
 
-1. Get a Claude API key at console.anthropic.com (**API Keys** → **Create Key**) and add some credit under **Billing**.
-2. In Cloudflare, open **Workers & Pages** → `site-protocols` → **Settings** → **Variables and Secrets** and add two **Secrets**:
-   - `ANTHROPIC_API_KEY`: the Claude API key
-   - `APP_KEY`: a password you make up (it stops strangers from using your API key)
-3. In the app, tap ⚙︎ and enter the same `APP_KEY` under **KI / AI**.
+Works without any setup: the texts go to Cloudflare's own AI (model Llama 3.3 70B). No extra account, no key, free.
 
-The texts are sent through your Cloudflare Worker to Claude (model `claude-opus-5-5`). Nothing is changed until you tap **Übernehmen / Apply**.
+- **Free amount:** Cloudflare allows about 10,000 "neurons" per day for free, which is enough for dozens of protocols. It resets every night (midnight UTC). On the free Cloudflare plan you are never charged; when the amount is used up, the app says so and it works again the next day.
+- **Nothing changes by itself:** you see every suggestion and tap **Übernehmen / Apply** for the ones you want.
+
+Optional extras (Cloudflare → **Workers & Pages** → `site-protocols` → **Settings** → **Variables and Secrets** → add a **Secret**):
+
+| Secret | What it does |
+|---|---|
+| `APP_KEY` | A password you make up. Stops strangers who find your web address from using your AI allowance. Enter the same password in the app under ⚙︎ → **KI / AI**. |
+| `ANTHROPIC_API_KEY` | A Claude API key from console.anthropic.com (needs paid credit). The app then uses Claude instead of Cloudflare's AI, for better wording. |
 
 ## Install on the iPhone
 

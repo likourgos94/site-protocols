@@ -1,7 +1,8 @@
 // The Cloudflare Worker: serves the app and answers /api/... requests.
-// Secrets (set in Cloudflare, never on the phone):
-//   APP_KEY            a password you choose; the app sends it with every AI request
-//   ANTHROPIC_API_KEY  your Claude API key, used for "Improve text with AI"
+// "Improve text with AI" uses Cloudflare's own AI (the AI binding in wrangler.jsonc),
+// so it works without any key. Optional secrets (set in Cloudflare, never on the phone):
+//   APP_KEY            a password you choose; if set, the app must send it with every AI request
+//   ANTHROPIC_API_KEY  a Claude API key; if set, Claude is used instead of Cloudflare's AI
 
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -28,7 +29,11 @@ export default {
 
 // ---------- "Improve text with AI" ----------
 
-const MAX_INPUT_CHARS = 30000; // keeps a single request (and its cost) small
+// Cloudflare's free model for German and English text, with JSON answers.
+const CLOUDFLARE_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
+
+// Keeps a single request small. Cloudflare's model reads less text at once than Claude.
+const MAX_INPUT_CHARS = { cloudflare: 12000, claude: 30000 };
 
 const SYSTEM_PROMPT = `You edit the texts of a construction site protocol (Baustellenprotokoll) written by a site manager for FTTx fibre-optic projects in Germany. The texts are short notes typed on a phone on site.
 
@@ -40,7 +45,7 @@ For every text:
 - Keep the language the text is written in. German stays German, English stays English, mixed stays mixed.
 - An empty text stays empty.
 
-Return the same number of items in the same order.`;
+The texts come as JSON. Answer with JSON of exactly the same shape: the same number of items in the same order.`;
 
 // Shape of both the request and the answer.
 const TEXTS_SCHEMA = {
@@ -71,10 +76,12 @@ const TEXTS_SCHEMA = {
 };
 
 async function polish(request, env) {
-  if (!env.APP_KEY || !env.ANTHROPIC_API_KEY) {
+  const engine = env.ANTHROPIC_API_KEY ? "claude" : env.AI ? "cloudflare" : null;
+  if (!engine) {
     return Response.json({ error: "not_configured" }, { status: 503 });
   }
-  if (!(await sameText(request.headers.get("X-App-Key") || "", env.APP_KEY))) {
+  // The password is only checked if one is set in Cloudflare.
+  if (env.APP_KEY && !(await sameText(request.headers.get("X-App-Key") || "", env.APP_KEY))) {
     return Response.json({ error: "wrong_key" }, { status: 401 });
   }
 
@@ -85,10 +92,59 @@ async function polish(request, env) {
     return Response.json({ error: "bad_request" }, { status: 400 });
   }
   const input = JSON.stringify(texts);
-  if (input.length > MAX_INPUT_CHARS) {
+  if (input.length > MAX_INPUT_CHARS[engine]) {
     return Response.json({ error: "too_long" }, { status: 413 });
   }
 
+  const answer = engine === "claude" ? await askClaude(input, env) : await askCloudflare(input, env);
+  if (answer.error) {
+    return Response.json(answer, { status: answer.status || 502 });
+  }
+  let improved;
+  try {
+    improved = cleanTexts(answer.data);
+  } catch {
+    return Response.json({ error: "ai_bad_answer" }, { status: 502 });
+  }
+  if (improved.topics.length !== texts.topics.length || improved.actions.length !== texts.actions.length) {
+    return Response.json({ error: "ai_bad_answer" }, { status: 502 });
+  }
+  return Response.json(improved);
+}
+
+// Cloudflare Workers AI: no key needed. Free for about 10,000 "neurons" a day
+// (resets at midnight UTC), which is many protocols.
+async function askCloudflare(input, env) {
+  let result;
+  try {
+    result = await env.AI.run(CLOUDFLARE_MODEL, {
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: input },
+      ],
+      response_format: { type: "json_schema", json_schema: TEXTS_SCHEMA },
+      max_tokens: 6000, // the default is only 256, too short for a whole protocol
+    });
+  } catch (error) {
+    const message = String(error?.message || error);
+    if (/3036|neuron|daily/i.test(message)) { // the free daily allowance is used up
+      return { error: "ai_daily_limit", status: 429 };
+    }
+    if (/json/i.test(message)) {
+      return { error: "ai_bad_answer" };
+    }
+    return { error: "ai_error", detail: message.slice(0, 200) };
+  }
+  const answer = result?.response;
+  try {
+    return { data: typeof answer === "string" ? JSON.parse(answer) : answer };
+  } catch {
+    return { error: "ai_bad_answer" };
+  }
+}
+
+// Claude (Anthropic): better wording, needs ANTHROPIC_API_KEY and paid API credit.
+async function askClaude(input, env) {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
   let response;
   try {
@@ -106,31 +162,26 @@ async function polish(request, env) {
     });
   } catch (error) {
     if (error instanceof Anthropic.AuthenticationError) {
-      return Response.json({ error: "ai_key_invalid" }, { status: 502 });
+      return { error: "ai_key_invalid" };
     }
     if (error instanceof Anthropic.RateLimitError) {
-      return Response.json({ error: "ai_busy" }, { status: 503 });
+      return { error: "ai_busy", status: 503 };
     }
     if (error instanceof Anthropic.APIError) {
-      return Response.json({ error: "ai_error", status: error.status }, { status: 502 });
+      return { error: "ai_error", status: 502, detail: `Claude ${error.status}` };
     }
-    return Response.json({ error: "ai_unreachable" }, { status: 502 });
+    return { error: "ai_unreachable" };
   }
 
   if (response.stop_reason !== "end_turn") {
-    return Response.json({ error: "ai_incomplete", reason: response.stop_reason }, { status: 502 });
+    return { error: "ai_incomplete", reason: response.stop_reason };
   }
   const text = response.content.find((block) => block.type === "text")?.text;
-  let improved;
   try {
-    improved = cleanTexts(JSON.parse(text));
+    return { data: JSON.parse(text) };
   } catch {
-    return Response.json({ error: "ai_bad_answer" }, { status: 502 });
+    return { error: "ai_bad_answer" };
   }
-  if (improved.topics.length !== texts.topics.length || improved.actions.length !== texts.actions.length) {
-    return Response.json({ error: "ai_bad_answer" }, { status: 502 });
-  }
-  return Response.json(improved);
 }
 
 // Keeps only the expected fields, all as strings.

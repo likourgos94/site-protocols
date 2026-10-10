@@ -9,5 +9,9 @@
     "binding": "ASSETS",
     // Only /api/... requests go to src/index.js (used later for Smartsheet).
     "run_worker_first": ["/api/*"]
+  },
+  // Cloudflare's built-in AI, used by "Improve text with AI". No key needed.
+  "ai": {
+    "binding": "AI"
   }
 }
