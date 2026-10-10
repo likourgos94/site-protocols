@@ -16,7 +16,7 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 - Finger signatures: pick two signers from the attendees
 - **Improve text with AI**: Cloudflare's built-in AI corrects and tidies the texts, you check each change before it is used
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
-- **Send by email**: shows the attendees' addresses, a subject and a message you can change, then opens Mail with the PDF attached. A web app cannot fill in Mail's "To" field, so the addresses are copied and you paste them
+- **Send by email**: shows the attendees' addresses, a subject and a message you can change, then opens the share sheet where you pick Outlook: the PDF is attached and the message filled in. A web app cannot fill in Outlook's "To" field, so the addresses are copied and you paste them
 - Saves automatically on the phone and works without signal
 
 ## Plan

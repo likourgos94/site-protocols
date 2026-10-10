@@ -818,7 +818,7 @@ async function createPdf() {
 
 // ---------- Send by email ----------
 
-const MAIL_BUTTON_TEXT = "Mail öffnen / Open Mail";
+const MAIL_BUTTON_TEXT = "In Outlook öffnen / Open in Outlook";
 let pendingMail = null; // a finished PDF waiting for one more tap (see sendMail)
 
 // The default message, with the protocol's date and time. It can be changed before sending.
@@ -857,8 +857,8 @@ function openMailSheet() {
   $("#mail-sheet").scrollTop = 0;
 }
 
-// Opens Mail through the share sheet with the PDF attached and the message filled in.
-// A web app cannot fill in Mail's "To" field, so the addresses are copied for pasting.
+// Opens the share sheet, where you pick Outlook: the PDF is attached and the message filled in.
+// A web app cannot fill in Outlook's "To" field, so the addresses are copied for pasting.
 async function sendMail() {
   const to = $("#m-to").value.split(/[\s,;]+/).filter(Boolean).join(", ");
   const subject = $("#m-subject").value.trim();
@@ -890,7 +890,7 @@ async function sendMail() {
     } else if (error.name === "NotAllowedError") {
       // Making the PDF took too long for the iPhone to count it as "your tap".
       pendingMail = file;
-      $("#m-send").textContent = "Nochmal tippen: Mail öffnen / Tap again: open Mail";
+      $("#m-send").textContent = "Nochmal tippen: Outlook öffnen / Tap again: open Outlook";
     }
     // AbortError: the share sheet was closed; the email screen stays open.
     return;
