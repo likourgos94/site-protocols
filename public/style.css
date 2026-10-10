@@ -179,5 +179,8 @@ select {
   background-position: right 12px center;
 }
 
+/* Email screen: what to do after the download */
+.done { color: var(--ok); font-size: 14px; font-weight: 600; margin: -4px 2px 12px; }
+
 /* Start screen: heading above the finished protocols */
 .list-heading { font-size: 15px; color: var(--muted); margin: 16px 2px 8px; }
