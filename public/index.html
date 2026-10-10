@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Site Protocols</title>
+  <meta name="theme-color" content="#155e75">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Protokolle">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="btn-back" class="icon-btn" hidden aria-label="Zurück / Back">‹</button>
+    <h1 id="title">Protokolle / Protocols</h1>
+    <button id="btn-settings" class="icon-btn" aria-label="Einstellungen / Settings">⚙︎</button>
+  </header>
+
+  <!-- 1) List of all protocols -->
+  <main id="view-list" class="view">
+    <button id="btn-new" class="primary big">+ Neues Protokoll / New protocol</button>
+    <ul id="protocol-list" class="cards"></ul>
+    <p id="empty-hint" class="hint" hidden>Noch keine Protokolle. / No protocols yet.</p>
+  </main>
+
+  <!-- 2) One protocol being edited -->
+  <main id="view-edit" class="view" hidden>
+    <section class="card">
+      <div class="row-between">
+        <strong id="f-no"></strong>
+        <span id="f-saved" class="hint"></span>
+      </div>
+      <label>Projekt / Project
+        <select id="f-project"></select>
+      </label>
+      <label>Art / Type
+        <select id="f-type"></select>
+      </label>
+      <div class="two">
+        <label>Datum / Date <input id="f-date" type="date"></label>
+        <label>Uhrzeit / Time <input id="f-time" type="time"></label>
+      </div>
+      <label>Ort / Location
+        <input id="f-location" type="text" placeholder="z.B. Hauptstraße 5, Lahnau">
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Teilnehmer / Attendees</h2>
+      <div id="attendees"></div>
+      <button class="add" data-add="attendees">+ Teilnehmer / Attendee</button>
+    </section>
+
+    <section class="card">
+      <h2>Themen &amp; Feststellungen / Topics &amp; findings</h2>
+      <div id="topics"></div>
+      <button class="add" data-add="topics">+ Thema / Topic</button>
+    </section>
+
+    <section class="card">
+      <h2>Maßnahmen / Action items</h2>
+      <div id="actions"></div>
+      <button class="add" data-add="actions">+ Maßnahme / Action item</button>
+    </section>
+
+    <section class="card">
+      <h2>Bemerkungen / Remarks</h2>
+      <textarea id="f-remarks" rows="3"></textarea>
+    </section>
+
+    <button id="btn-pdf" class="primary big">PDF erstellen &amp; teilen / Create &amp; share PDF</button>
+    <button id="btn-delete" class="danger">Protokoll löschen / Delete protocol</button>
+  </main>
+
+  <!-- 3) Settings -->
+  <main id="view-settings" class="view" hidden>
+    <section class="card">
+      <h2>Ich / Me</h2>
+      <label>Name <input id="s-name" type="text"></label>
+      <label>Firma / Company <input id="s-company" type="text"></label>
+      <label>Funktion / Role <input id="s-role" type="text" placeholder="Bauleitung / Site manager"></label>
+    </section>
+    <section class="card">
+      <h2>Projekte / Projects</h2>
+      <p class="hint">Ein Projekt pro Zeile. Das erste Wort wird Teil der Protokollnummer. / One project per line. The first word becomes part of the protocol number.</p>
+      <textarea id="s-projects" rows="4"></textarea>
+    </section>
+    <p class="hint">Alles wird automatisch auf diesem iPhone gespeichert. / Everything is saved automatically on this iPhone.</p>
+  </main>
+
+  <datalist id="people-names"></datalist>
+
+  <script src="/vendor/jspdf.umd.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
