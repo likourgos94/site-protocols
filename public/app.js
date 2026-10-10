@@ -823,6 +823,7 @@ async function createPdf() {
 // ---------- Send by email ----------
 
 const MAIL_BUTTON_TEXT = "In Outlook öffnen / Open in Outlook";
+const PC_MAIL_BUTTON_TEXT = "📥 E-Mail für Outlook herunterladen / Download email for Outlook";
 let pendingMail = null; // a finished PDF waiting for one more tap (see sendMail)
 
 // Phones (touch screens) use the share sheet; computers get an Outlook email file instead.
@@ -859,8 +860,8 @@ function openMailSheet() {
   $("#m-subject").value = `Protokoll / Protocol ${p.no} – ${TYPES[p.type] || ""} – ${fmtDate(p.date)}`;
   $("#m-body").value = mailText(p);
   pendingMail = null;
-  $("#m-send").textContent = MAIL_BUTTON_TEXT;
   const phone = onPhone();
+  $("#m-send").textContent = phone ? MAIL_BUTTON_TEXT : PC_MAIL_BUTTON_TEXT;
   $("#m-hint-phone").hidden = !phone;
   for (const id of ["#m-hint-pc", "#m-web", "#m-web-hint"]) $(id).hidden = phone;
   $("#m-done").hidden = true;
@@ -934,7 +935,7 @@ async function mailFromComputer(to, subject, body, pdf) {
   await Promise.all([saveNow(), db.putSettings(settings)]);
   const fileName = `${current.no}.eml`;
   downloadFile(new Blob([await emailFile(to, subject, body, pdf, `${current.no}.pdf`)], { type: "message/rfc822" }), fileName);
-  $("#m-done").textContent = `✓ ${fileName} heruntergeladen: die Datei öffnen. / downloaded: open the file.`;
+  $("#m-done").textContent = `✓ ${fileName} heruntergeladen: Datei öffnen, dann in Outlook „Senden“. / downloaded: open the file, then press Send in Outlook.`;
   $("#m-done").hidden = false;
 }
 

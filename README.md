@@ -18,7 +18,7 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
 - **Send by email**: shows the attendees' addresses, a subject and a message you can change, then:
   - on the iPhone, opens the share sheet where you pick Outlook: the PDF is attached and the message filled in. A web app cannot fill in Outlook's "To" field, so the addresses are copied and you paste them
-  - on a PC, downloads an email file (`.eml`); opening it shows Outlook's new-email window with recipients, subject, message and PDF. **Outlook im Browser / Outlook on the web** opens a new email in Outlook on the web instead and downloads the PDF to drag in
+  - on a PC, the button reads **E-Mail für Outlook herunterladen / Download email for Outlook** and downloads the email as a file (`.eml`). Opening the file shows Outlook's new-email window with recipients, subject, message and PDF; then press Send. Tip: in Chrome's downloads, ⋮ → "Always open files of this type" makes Outlook open it right away next time. **Outlook im Browser / Outlook on the web** opens a new email in Outlook on the web instead and downloads the PDF to drag in
 - Saves automatically on the phone and works without signal
 
 ## Plan
