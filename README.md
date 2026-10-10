@@ -12,7 +12,8 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 - Topics and findings, each marked OK or defect, with a note and photos
 - Action items: what, who, by when, with photos
 - Remarks
-- Finger signatures (you and one attendee)
+- Finger signatures: pick two signers from the attendees
+- **Improve text with AI**: Claude corrects and tidies the texts, you check each change before it is used
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
 - Saves automatically on the phone and works without signal
 
@@ -33,6 +34,16 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 
 From then on, every change on the `main` branch goes online automatically.
 
+## Turn on "Improve text with AI" (one time)
+
+1. Get a Claude API key at console.anthropic.com (**API Keys** → **Create Key**) and add some credit under **Billing**.
+2. In Cloudflare, open **Workers & Pages** → `site-protocols` → **Settings** → **Variables and Secrets** and add two **Secrets**:
+   - `ANTHROPIC_API_KEY`: the Claude API key
+   - `APP_KEY`: a password you make up (it stops strangers from using your API key)
+3. In the app, tap ⚙︎ and enter the same `APP_KEY` under **KI / AI**.
+
+The texts are sent through your Cloudflare Worker to Claude (model `claude-opus-5-5`). Nothing is changed until you tap **Übernehmen / Apply**.
+
 ## Install on the iPhone
 
 1. Open the address in **Safari**.
@@ -50,7 +61,7 @@ Your protocols are stored only on this iPhone until step 3 (Smartsheet) is built
 | `public/style.css` | Colors and layout |
 | `public/sw.js` | Offline support. Raise the `CACHE` version after changes |
 | `public/vendor/jspdf.umd.min.js` | PDF library (jsPDF 4.2.1, MIT license) |
-| `src/index.js` | Cloudflare Worker, used for Smartsheet later |
+| `src/index.js` | Cloudflare Worker: the AI text check, and Smartsheet later |
 | `wrangler.jsonc` | Cloudflare settings |
 
 ## Try it on a computer
