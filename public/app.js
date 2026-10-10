@@ -786,6 +786,10 @@ async function sharePdf(blob, fileName) {
     }
   }
   // Fallback (e.g. on a computer): download the file.
+  downloadFile(blob, fileName);
+}
+
+function downloadFile(blob, fileName) {
   const a = el("a", { href: URL.createObjectURL(blob), download: fileName });
   document.body.append(a);
   a.click();
@@ -821,6 +825,9 @@ async function createPdf() {
 const MAIL_BUTTON_TEXT = "In Outlook öffnen / Open in Outlook";
 let pendingMail = null; // a finished PDF waiting for one more tap (see sendMail)
 
+// Phones (touch screens) use the share sheet; computers get an Outlook email file instead.
+const onPhone = () => matchMedia("(pointer: coarse)").matches;
+
 // The default message, with the protocol's date and time. It can be changed before sending.
 function mailText(p) {
   const de = p.time ? `am ${fmtDate(p.date)} um ${p.time} Uhr` : `am ${fmtDate(p.date)}`;
@@ -853,16 +860,28 @@ function openMailSheet() {
   $("#m-body").value = mailText(p);
   pendingMail = null;
   $("#m-send").textContent = MAIL_BUTTON_TEXT;
+  const phone = onPhone();
+  $("#m-hint-phone").hidden = !phone;
+  for (const id of ["#m-hint-pc", "#m-web", "#m-web-hint"]) $(id).hidden = phone;
+  $("#m-done").hidden = true;
   $("#mail-sheet").hidden = false;
   $("#mail-sheet").scrollTop = 0;
+}
+
+// Recipients, subject and message as currently written on the email screen.
+function mailFields() {
+  return {
+    to: $("#m-to").value.split(/[\s,;]+/).filter(Boolean).join(", "),
+    subject: $("#m-subject").value.trim(),
+    body: $("#m-body").value.trim(),
+  };
 }
 
 // Opens the share sheet, where you pick Outlook: the PDF is attached and the message filled in.
 // A web app cannot fill in Outlook's "To" field, so the addresses are copied for pasting.
 async function sendMail() {
-  const to = $("#m-to").value.split(/[\s,;]+/).filter(Boolean).join(", ");
-  const subject = $("#m-subject").value.trim();
-  const body = $("#m-body").value.trim();
+  const { to, subject, body } = mailFields();
+  if (!onPhone()) return mailFromComputer(to, subject, body);
 
   let file = pendingMail;
   if (!file) {
@@ -896,14 +915,96 @@ async function sendMail() {
     return;
   }
 
-  // Fallback (e.g. on a computer): download the PDF and open the mail program with the text.
+  // A phone that cannot share files: use the email file like on a computer.
+  return mailFromComputer(to, subject, body, file);
+}
+
+// Computer: downloads an email file that Outlook opens as a new, unsent email
+// with recipients, subject, message and the PDF attached.
+async function mailFromComputer(to, subject, body, pdf) {
+  if (!pdf) {
+    markFinished();
+    try {
+      pdf = buildPdf(current, settings);
+    } catch (e) {
+      alert("PDF Fehler / PDF error: " + e.message);
+      return;
+    }
+  }
   await Promise.all([saveNow(), db.putSettings(settings)]);
-  const a = el("a", { href: URL.createObjectURL(file), download: file.name });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  location.href = `mailto:${encodeURI(to.replace(/\s+/g, ""))}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  $("#mail-sheet").hidden = true;
+  const fileName = `${current.no}.eml`;
+  downloadFile(new Blob([await emailFile(to, subject, body, pdf, `${current.no}.pdf`)], { type: "message/rfc822" }), fileName);
+  $("#m-done").textContent = `✓ ${fileName} heruntergeladen: die Datei öffnen. / downloaded: open the file.`;
+  $("#m-done").hidden = false;
+}
+
+// Computer, Outlook in the browser: opens a new email there with recipients, subject and
+// message, and downloads the PDF to drag into it (Outlook on the web cannot take attachments from a link).
+async function mailViaOutlookWeb() {
+  const { to, subject, body } = mailFields();
+  const params = new URLSearchParams({ to: to.replace(/\s+/g, ""), subject, body });
+  window.open(`https://outlook.office.com/mail/deeplink/compose?${params.toString().replace(/\+/g, "%20")}`, "_blank");
+  markFinished();
+  let pdf;
+  try {
+    pdf = buildPdf(current, settings);
+  } catch (e) {
+    alert("PDF Fehler / PDF error: " + e.message);
+    return;
+  }
+  await Promise.all([saveNow(), db.putSettings(settings)]);
+  downloadFile(pdf, `${current.no}.pdf`);
+  $("#m-done").textContent = `✓ ${current.no}.pdf heruntergeladen: in die E-Mail ziehen. / downloaded: drag it into the email.`;
+  $("#m-done").hidden = false;
+}
+
+// ----- Email file (.eml) -----
+
+const utf8 = (text) => new TextEncoder().encode(text);
+
+function base64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+// Subject with umlauts or dashes, written the way email headers need it.
+function encodeHeader(text) {
+  if (/^[\x20-\x7e]*$/.test(text)) return text;
+  const words = [""];
+  for (const ch of text) {
+    if (utf8(words[words.length - 1] + ch).length > 45) words.push("");
+    words[words.length - 1] += ch;
+  }
+  return words.map((w) => `=?UTF-8?B?${base64(utf8(w))}?=`).join("\r\n ");
+}
+
+// "X-Unsent: 1" makes Outlook open the file as a new email ready to send, not as a received one.
+async function emailFile(to, subject, body, pdfBlob, pdfName) {
+  const boundary = `----protocol-${crypto.randomUUID()}`;
+  const wrap = (b64) => b64.replace(/.{1,76}/g, "$&\r\n");
+  const pdf = new Uint8Array(await pdfBlob.arrayBuffer());
+  return [
+    `To: ${to}`,
+    `Subject: ${encodeHeader(subject)}`,
+    "X-Unsent: 1",
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap(base64(utf8(body.replace(/\r?\n/g, "\r\n")))),
+    `--${boundary}`,
+    `Content-Type: application/pdf; name="${pdfName}"`,
+    `Content-Disposition: attachment; filename="${pdfName}"`,
+    "Content-Transfer-Encoding: base64",
+    "",
+    wrap(base64(pdf)),
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
 }
 
 // ---------- Improve text with AI ----------
@@ -1093,6 +1194,7 @@ async function init() {
   $("#btn-pdf").addEventListener("click", createPdf);
   $("#btn-mail").addEventListener("click", openMailSheet);
   $("#m-send").addEventListener("click", sendMail);
+  $("#m-web").addEventListener("click", mailViaOutlookWeb);
   $("#m-cancel").addEventListener("click", () => { $("#mail-sheet").hidden = true; });
   $("#btn-ai").textContent = AI_BUTTON_TEXT;
   $("#btn-ai").addEventListener("click", improveWithAi);

@@ -143,9 +143,13 @@
       <p id="m-missing" class="hint" hidden></p>
       <label>Betreff / Subject <input id="m-subject" type="text"></label>
       <label>Nachricht / Message <textarea id="m-body" rows="12"></textarea></label>
-      <p class="hint">Im Teilen-Menü „Outlook“ wählen (beim ersten Mal evtl. unter „Mehr“). Das PDF ist angehängt. Die Empfänger sind schon kopiert: ins Feld „An“ tippen und „Einsetzen“ wählen. / In the share menu choose Outlook (the first time it may be under More). The PDF is attached. The recipients are already copied: tap the To field and choose Paste.</p>
+      <p id="m-hint-phone" class="hint">Im Teilen-Menü „Outlook“ wählen (beim ersten Mal evtl. unter „Mehr“). Das PDF ist angehängt. Die Empfänger sind schon kopiert: ins Feld „An“ tippen und „Einsetzen“ wählen. / In the share menu choose Outlook (the first time it may be under More). The PDF is attached. The recipients are already copied: tap the To field and choose Paste.</p>
+      <p id="m-hint-pc" class="hint" hidden>Lädt eine E-Mail-Datei (.eml) herunter. Datei anklicken: Outlook öffnet die fertige E-Mail mit Empfängern, Text und PDF, dann nur noch „Senden“. / Downloads an email file (.eml). Click it: Outlook opens the finished email with recipients, text and PDF, then just press Send.</p>
       <button id="m-send" class="primary big" type="button">In Outlook öffnen / Open in Outlook</button>
-      <button id="m-cancel" class="danger" type="button">Abbrechen / Cancel</button>
+      <p id="m-done" class="done" hidden></p>
+      <button id="m-web" class="secondary big" type="button" hidden>Outlook im Browser / Outlook on the web</button>
+      <p id="m-web-hint" class="hint" hidden>Öffnet Outlook im Browser mit Empfängern und Text und lädt das PDF herunter. Das PDF dann in die E-Mail ziehen. / Opens Outlook in the browser with recipients and text, and downloads the PDF. Then drag the PDF into the email.</p>
+      <button id="m-cancel" class="danger" type="button">Schließen / Close</button>
     </div>
   </div>
 
