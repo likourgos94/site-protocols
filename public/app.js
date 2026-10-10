@@ -20,11 +20,12 @@ const RESULTS = {
 const LISTS = {
   attendees: {
     title: "Teilnehmer / Attendee",
-    blank: () => ({ name: "", company: "", role: "" }),
+    blank: () => ({ name: "", company: "", role: "", email: "" }),
     fields: [
       { key: "name", label: "Name", list: "people-names" },
       { key: "company", label: "Firma / Company" },
       { key: "role", label: "Funktion / Role" },
+      { key: "email", label: "E-Mail", type: "email" },
     ],
   },
   topics: {
@@ -152,28 +153,41 @@ async function nextNumber(project, year, ownId) {
 
 let settings = defaultSettings();
 let current = null; // the protocol open in the editor
+let listMode = "finished"; // the start screen shows "finished" protocols, or the "drafts"
 let saveTimer = null;
 const photoCache = new Map(); // photo id -> { bytes, width, height, url } for the open protocol
 
 // ---------- Views ----------
 
 function show(view) {
+  const home = view === "list" && listMode === "finished";
   for (const v of ["list", "edit", "settings"]) $(`#view-${v}`).hidden = v !== view;
-  $("#btn-back").hidden = view === "list";
-  $("#btn-settings").hidden = view !== "list";
+  $("#btn-back").hidden = home;
+  $("#btn-settings").hidden = !home;
   $("#title").textContent =
     view === "edit" ? "Protokoll / Protocol" :
     view === "settings" ? "Einstellungen / Settings" :
-    "Protokolle / Protocols";
+    home ? "Protokolle / Protocols" :
+    "Entwürfe / Drafts";
   window.scrollTo(0, 0);
 }
 
+const isDraft = (p) => p.status !== "final";
+
 async function renderProtocolList() {
-  const list = await db.allProtocols();
+  const all = await db.allProtocols();
+  const drafts = all.filter(isDraft).length;
+  const showDrafts = listMode === "drafts";
+  const list = all.filter((p) => isDraft(p) === showDrafts);
   list.sort((a, b) => (b.date + b.no).localeCompare(a.date + a.no));
+  $("#list-buttons").hidden = showDrafts;
+  $("#btn-drafts").textContent = `📝 Entwürfe / Drafts (${drafts})`;
   const ul = $("#protocol-list");
   ul.replaceChildren();
   $("#empty-hint").hidden = list.length > 0;
+  $("#empty-hint").textContent = showDrafts
+    ? "Keine Entwürfe. / No drafts."
+    : "Noch keine fertigen Protokolle. Ein Protokoll ist fertig, sobald das PDF erstellt ist. / No finished protocols yet. A protocol is finished once its PDF is created.";
   for (const p of list) {
     const li = el("li");
     const top = el("div", { class: "row-between" });
@@ -291,13 +305,14 @@ function renderItems(kind) {
   if (kind === "attendees") updatePeopleList();
 }
 
-// When a known name is picked, fill in company and role.
+// When a known name is picked, fill in company, role and email.
 function fillKnownPerson(item) {
   const known = settings.people.find((x) => x.name.toLowerCase() === item.name.trim().toLowerCase());
   if (!known) return;
   let changed = false;
   if (!item.company) { item.company = known.company; changed = true; }
   if (!item.role) { item.role = known.role; changed = true; }
+  if (!item.email && known.email) { item.email = known.email; changed = true; }
   if (changed) { renderItems("attendees"); save(); }
 }
 
@@ -330,8 +345,9 @@ function rememberPeople(attendees) {
     const name = a.name.trim();
     if (!name) continue;
     const known = settings.people.find((x) => x.name.toLowerCase() === name.toLowerCase());
-    if (known) Object.assign(known, { company: a.company || known.company, role: a.role || known.role });
-    else settings.people.push({ name, company: a.company, role: a.role });
+    const email = (a.email || "").trim();
+    if (known) Object.assign(known, { company: a.company || known.company, role: a.role || known.role, email: email || known.email || "" });
+    else settings.people.push({ name, company: a.company, role: a.role, email });
   }
 }
 
@@ -776,11 +792,16 @@ async function sharePdf(blob, fileName) {
   a.remove();
 }
 
-async function createPdf() {
+// A protocol counts as finished once its PDF is made.
+function markFinished() {
   clearTimeout(saveTimer);
   current.status = "final";
   current.pdfCreatedAt = new Date().toISOString();
   rememberPeople(current.attendees);
+}
+
+async function createPdf() {
+  markFinished();
 
   let blob;
   try {
@@ -793,6 +814,96 @@ async function createPdf() {
   const sharing = sharePdf(blob, `${current.no}.pdf`);
   await Promise.all([saveNow(), db.putSettings(settings)]);
   await sharing;
+}
+
+// ---------- Send by email ----------
+
+const MAIL_BUTTON_TEXT = "In Outlook öffnen / Open in Outlook";
+let pendingMail = null; // a finished PDF waiting for one more tap (see sendMail)
+
+// The default message, with the protocol's date and time. It can be changed before sending.
+function mailText(p) {
+  const de = p.time ? `am ${fmtDate(p.date)} um ${p.time} Uhr` : `am ${fmtDate(p.date)}`;
+  const en = p.time ? `on ${fmtDate(p.date)} at ${p.time}` : `on ${fmtDate(p.date)}`;
+  return [
+    "Hallo zusammen,",
+    "",
+    `das folgende Protokoll wurde ${de} erstellt. Sie finden es im Anhang.`,
+    "",
+    "Hello everyone,",
+    "",
+    `the following protocol was created ${en}. Please find it attached.`,
+    "",
+    "Viele Grüße / Best regards",
+    ...[settings.name, settings.company].filter(Boolean),
+  ].join("\n");
+}
+
+function openMailSheet() {
+  const p = current;
+  const emails = p.attendees.map((a) => (a.email || "").trim()).filter(Boolean);
+  $("#m-to").value = [...new Set(emails)].join(", ");
+  // Attendees without an email (you don't need your own, you are the sender)
+  const missing = p.attendees
+    .filter((a) => a.name.trim() && !(a.email || "").trim() && a.name.trim() !== settings.name)
+    .map((a) => a.name.trim());
+  $("#m-missing").hidden = missing.length === 0;
+  $("#m-missing").textContent = `Ohne E-Mail / No email: ${missing.join(", ")}`;
+  $("#m-subject").value = `Protokoll / Protocol ${p.no} – ${TYPES[p.type] || ""} – ${fmtDate(p.date)}`;
+  $("#m-body").value = mailText(p);
+  pendingMail = null;
+  $("#m-send").textContent = MAIL_BUTTON_TEXT;
+  $("#mail-sheet").hidden = false;
+  $("#mail-sheet").scrollTop = 0;
+}
+
+// Opens the share sheet, where you pick Outlook: the PDF is attached and the message filled in.
+// A web app cannot fill in Outlook's "To" field, so the addresses are copied for pasting.
+async function sendMail() {
+  const to = $("#m-to").value.split(/[\s,;]+/).filter(Boolean).join(", ");
+  const subject = $("#m-subject").value.trim();
+  const body = $("#m-body").value.trim();
+
+  let file = pendingMail;
+  if (!file) {
+    // On the second tap the addresses were already copied, and copying again could block Mail from opening.
+    if (to && navigator.clipboard) navigator.clipboard.writeText(to).catch(() => {});
+    markFinished();
+    try {
+      file = new File([buildPdf(current, settings)], `${current.no}.pdf`, { type: "application/pdf" });
+    } catch (e) {
+      alert("PDF Fehler / PDF error: " + e.message);
+      return;
+    }
+  }
+  pendingMail = null;
+  $("#m-send").textContent = MAIL_BUTTON_TEXT;
+
+  const data = { files: [file], title: subject, text: body };
+  if (navigator.canShare && navigator.canShare(data)) {
+    // The share sheet must open right after the tap, so start it before saving.
+    const sharing = navigator.share(data).then(() => null, (error) => error);
+    await Promise.all([saveNow(), db.putSettings(settings)]);
+    const error = await sharing;
+    if (!error) {
+      $("#mail-sheet").hidden = true;
+    } else if (error.name === "NotAllowedError") {
+      // Making the PDF took too long for the iPhone to count it as "your tap".
+      pendingMail = file;
+      $("#m-send").textContent = "Nochmal tippen: Outlook öffnen / Tap again: open Outlook";
+    }
+    // AbortError: the share sheet was closed; the email screen stays open.
+    return;
+  }
+
+  // Fallback (e.g. on a computer): download the PDF and open the mail program with the text.
+  await Promise.all([saveNow(), db.putSettings(settings)]);
+  const a = el("a", { href: URL.createObjectURL(file), download: file.name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  location.href = `mailto:${encodeURI(to.replace(/\s+/g, ""))}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  $("#mail-sheet").hidden = true;
 }
 
 // ---------- Improve text with AI ----------
@@ -974,7 +1085,15 @@ async function init() {
   $("#viewer").addEventListener("click", () => { $("#viewer").hidden = true; });
 
   $("#btn-new").addEventListener("click", newProtocol);
+  $("#btn-drafts").addEventListener("click", async () => {
+    listMode = "drafts";
+    await renderProtocolList();
+    show("list");
+  });
   $("#btn-pdf").addEventListener("click", createPdf);
+  $("#btn-mail").addEventListener("click", openMailSheet);
+  $("#m-send").addEventListener("click", sendMail);
+  $("#m-cancel").addEventListener("click", () => { $("#mail-sheet").hidden = true; });
   $("#btn-ai").textContent = AI_BUTTON_TEXT;
   $("#btn-ai").addEventListener("click", improveWithAi);
   $("#btn-settings").addEventListener("click", openSettings);
@@ -990,6 +1109,7 @@ async function init() {
   });
   $("#btn-back").addEventListener("click", async () => {
     if (current) await saveNow();
+    else if (!$("#view-list").hidden) listMode = "finished"; // from the drafts back to the start
     clearPhotoCache();
     current = null;
     await renderProtocolList();

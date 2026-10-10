@@ -19,11 +19,15 @@
     <button id="btn-settings" class="icon-btn" aria-label="Einstellungen / Settings">⚙︎</button>
   </header>
 
-  <!-- 1) List of all protocols -->
+  <!-- 1) List of protocols: finished ones, or the drafts -->
   <main id="view-list" class="view">
-    <button id="btn-new" class="primary big">+ Neues Protokoll / New protocol</button>
+    <div id="list-buttons">
+      <button id="btn-new" class="primary big">+ Neues Protokoll / New protocol</button>
+      <button id="btn-drafts" class="secondary big" type="button">📝 Entwürfe / Drafts</button>
+      <h2 class="list-heading">Fertige Protokolle / Finished protocols</h2>
+    </div>
     <ul id="protocol-list" class="cards"></ul>
-    <p id="empty-hint" class="hint" hidden>Noch keine Protokolle. / No protocols yet.</p>
+    <p id="empty-hint" class="hint" hidden></p>
   </main>
 
   <!-- 2) One protocol being edited -->
@@ -88,6 +92,7 @@
     <button id="btn-ai" class="secondary big" type="button"></button>
     <button id="btn-pdf" class="primary big">PDF erstellen &amp; teilen / Create &amp; share PDF</button>
     <button id="btn-share" class="primary big" hidden>PDF teilen / Share PDF</button>
+    <button id="btn-mail" class="primary big" type="button">✉️ Per E-Mail senden / Send by email</button>
     <button id="btn-delete" class="danger">Protokoll löschen / Delete protocol</button>
   </main>
 
@@ -125,6 +130,22 @@
       <div id="ai-changes"></div>
       <button id="ai-apply" class="primary big" type="button">Übernehmen / Apply</button>
       <button id="ai-discard" class="danger" type="button">Verwerfen / Discard</button>
+    </div>
+  </div>
+
+  <!-- Email: recipients and text to check before Outlook opens -->
+  <div id="mail-sheet" class="sheet" hidden>
+    <div class="sheet-body">
+      <h2>Per E-Mail senden / Send by email</h2>
+      <label>An / To
+        <textarea id="m-to" rows="2" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+      </label>
+      <p id="m-missing" class="hint" hidden></p>
+      <label>Betreff / Subject <input id="m-subject" type="text"></label>
+      <label>Nachricht / Message <textarea id="m-body" rows="12"></textarea></label>
+      <p class="hint">Im Teilen-Menü „Outlook“ wählen (beim ersten Mal evtl. unter „Mehr“). Das PDF ist angehängt. Die Empfänger sind schon kopiert: ins Feld „An“ tippen und „Einsetzen“ wählen. / In the share menu choose Outlook (the first time it may be under More). The PDF is attached. The recipients are already copied: tap the To field and choose Paste.</p>
+      <button id="m-send" class="primary big" type="button">In Outlook öffnen / Open in Outlook</button>
+      <button id="m-cancel" class="danger" type="button">Abbrechen / Cancel</button>
     </div>
   </div>
 
