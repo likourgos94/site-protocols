@@ -1,6 +1,6 @@
 // Service worker: keeps a copy of the app on the phone so it opens without signal.
 // When you change the app, raise the version number so phones pick up the new files.
-const CACHE = "site-protocols-v1";
+const CACHE = "site-protocols-v2";
 const FILES = [
   "/",
   "/app.js",
@@ -36,7 +36,8 @@ self.addEventListener("fetch", (event) => {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 4000);
-        const response = await fetch(event.request, { signal: controller.signal });
+        // "no-cache" = always ask the server whether a file changed (cheap when it did not)
+        const response = await fetch(event.request, { cache: "no-cache", signal: controller.signal });
         clearTimeout(timer);
         if (response.ok && !response.redirected) cache.put(event.request, response.clone());
         return response;

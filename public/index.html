@@ -71,7 +71,20 @@
       <textarea id="f-remarks" rows="3"></textarea>
     </section>
 
+    <section class="card">
+      <h2>Unterschriften / Signatures</h2>
+      <p class="sig-label">Ersteller / Prepared by: <span id="sig-me-name"></span></p>
+      <canvas class="sig" data-sig="mine"></canvas>
+      <button class="remove" type="button" data-clear="mine">Löschen / Clear</button>
+      <label class="sig-other">Name (Teilnehmer / Attendee)
+        <input id="f-other-name" type="text" list="people-names">
+      </label>
+      <canvas class="sig" data-sig="other"></canvas>
+      <button class="remove" type="button" data-clear="other">Löschen / Clear</button>
+    </section>
+
     <button id="btn-pdf" class="primary big">PDF erstellen &amp; teilen / Create &amp; share PDF</button>
+    <button id="btn-share" class="primary big" hidden>PDF teilen / Share PDF</button>
     <button id="btn-delete" class="danger">Protokoll löschen / Delete protocol</button>
   </main>
 
@@ -92,6 +105,9 @@
   </main>
 
   <datalist id="people-names"></datalist>
+
+  <!-- Full-screen photo, tap to close -->
+  <div id="viewer" hidden><img alt=""></div>
 
   <script src="/vendor/jspdf.umd.min.js"></script>
   <script src="/app.js"></script>

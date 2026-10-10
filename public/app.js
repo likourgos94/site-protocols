@@ -29,7 +29,8 @@ const LISTS = {
   },
   topics: {
     title: "Thema / Topic",
-    blank: () => ({ title: "", result: "", note: "" }),
+    blank: () => ({ title: "", result: "", note: "", photos: [] }),
+    photos: true,
     fields: [
       { key: "title", label: "Thema / Topic", type: "textarea" },
       { key: "result", label: "Ergebnis / Result", type: "select", options: RESULTS },
@@ -38,7 +39,8 @@ const LISTS = {
   },
   actions: {
     title: "Maßnahme / Action item",
-    blank: () => ({ task: "", who: "", due: "" }),
+    blank: () => ({ task: "", who: "", due: "", photos: [] }),
+    photos: true,
     fields: [
       { key: "task", label: "Was / What", type: "textarea" },
       { key: "who", label: "Wer / Who", list: "people-names" },
@@ -54,10 +56,17 @@ const db = {
   open() {
     if (!this._open) {
       this._open = new Promise((resolve, reject) => {
-        const req = indexedDB.open("site-protocols", 1);
-        req.onupgradeneeded = () => {
-          req.result.createObjectStore("protocols", { keyPath: "id" });
-          req.result.createObjectStore("settings");
+        const req = indexedDB.open("site-protocols", 2);
+        req.onupgradeneeded = (event) => {
+          const conn = req.result;
+          if (event.oldVersion < 1) {
+            conn.createObjectStore("protocols", { keyPath: "id" });
+            conn.createObjectStore("settings");
+          }
+          if (event.oldVersion < 2) {
+            // Photos are stored separately: { id, protocolId, data (JPEG blob), width, height }
+            conn.createObjectStore("photos", { keyPath: "id" }).createIndex("protocolId", "protocolId");
+          }
         };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
@@ -79,6 +88,14 @@ const db = {
   deleteProtocol: (id) => db.run("protocols", "readwrite", (s) => s.delete(id)),
   getSettings: () => db.run("settings", "readonly", (s) => s.get("main")),
   putSettings: (v) => db.run("settings", "readwrite", (s) => s.put(v, "main")),
+  photosOf: (protocolId) => db.run("photos", "readonly", (s) => s.index("protocolId").getAll(protocolId)),
+  putPhoto: (ph) => db.run("photos", "readwrite", (s) => s.put(ph)),
+  deletePhoto: (id) => db.run("photos", "readwrite", (s) => s.delete(id)),
+  deletePhotosOf: (protocolId) => db.run("photos", "readwrite", (s) => {
+    const req = s.index("protocolId").getAllKeys(protocolId);
+    req.onsuccess = () => req.result.forEach((key) => s.delete(key));
+    return req;
+  }),
 };
 
 function defaultSettings() {
@@ -113,6 +130,8 @@ function fmtDate(iso) {
   return `${d}.${m}.${y}`;
 }
 
+const hasPhotos = (item) => (item.photos || []).length > 0;
+
 // "LAHLU01 Lahnau" -> "LAHLU01"
 const projectCode = (project) => (project || "PROJ").trim().split(/\s+/)[0].toUpperCase();
 
@@ -133,6 +152,7 @@ async function nextNumber(project, year, ownId) {
 let settings = defaultSettings();
 let current = null; // the protocol open in the editor
 let saveTimer = null;
+const photoCache = new Map(); // photo id -> { bytes, width, height, url } for the open protocol
 
 // ---------- Views ----------
 
@@ -182,17 +202,20 @@ async function newProtocol() {
     topics: [LISTS.topics.blank()],
     actions: [],
     remarks: "",
+    signatures: { mine: null, other: null, otherName: "" },
     status: "draft",
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
   p.no = await nextNumber(p.project, p.date.slice(0, 4), p.id);
   await db.putProtocol(p);
-  openEditor(p);
+  await openEditor(p);
 }
 
-function openEditor(p) {
+async function openEditor(p) {
   current = p;
+  p.signatures ||= { mine: null, other: null, otherName: "" }; // protocols from before step 2
+  await loadPhotos(p.id);
 
   // Project list: settings + the protocol's own project (in case it was removed)
   const projects = [...new Set([...settings.projects, p.project])];
@@ -206,9 +229,13 @@ function openEditor(p) {
   $("#f-time").value = p.time;
   $("#f-location").value = p.location;
   $("#f-remarks").value = p.remarks;
+  $("#f-other-name").value = p.signatures.otherName;
+  $("#btn-share").hidden = true;
+  $("#sig-me-name").textContent = settings.name || "–";
   for (const kind of Object.keys(LISTS)) renderItems(kind);
   updatePeopleList();
   show("edit");
+  document.querySelectorAll("canvas.sig").forEach(drawSignature); // needs the editor to be visible
 }
 
 // Draws the attendee / topic / action item cards.
@@ -223,6 +250,8 @@ function renderItems(kind) {
     const head = el("div", { class: "item-head" }, `${i + 1}. ${cfg.title}`);
     const remove = el("button", { class: "remove", type: "button" }, "Entfernen / Remove");
     remove.addEventListener("click", () => {
+      if ((item.photos || []).length && !confirm("Mit Fotos entfernen? / Remove with its photos?")) return;
+      for (const id of item.photos || []) forgetPhoto(id);
       items.splice(i, 1);
       renderItems(kind);
       save();
@@ -256,6 +285,7 @@ function renderItems(kind) {
       label.append(input);
       card.append(label);
     }
+    if (cfg.photos) card.append(photoRow(kind, item));
     box.append(card);
   });
 }
@@ -308,6 +338,172 @@ async function refreshNumber() {
   if (current.status === "final") return;
   current.no = await nextNumber(current.project, current.date.slice(0, 4), current.id);
   $("#f-no").textContent = current.no;
+}
+
+// ---------- Photos ----------
+
+// Loads the open protocol's photos into memory, so the PDF can be made instantly.
+async function loadPhotos(protocolId) {
+  clearPhotoCache();
+  for (const ph of await db.photosOf(protocolId)) await cachePhoto(ph);
+}
+
+async function cachePhoto(ph) {
+  const entry = { width: ph.width, height: ph.height, url: URL.createObjectURL(ph.data), bytes: null };
+  photoCache.set(ph.id, entry);
+  entry.bytes = new Uint8Array(await ph.data.arrayBuffer());
+}
+
+function clearPhotoCache() {
+  for (const ph of photoCache.values()) URL.revokeObjectURL(ph.url);
+  photoCache.clear();
+}
+
+function forgetPhoto(id) {
+  db.deletePhoto(id);
+  const ph = photoCache.get(id);
+  if (ph) URL.revokeObjectURL(ph.url);
+  photoCache.delete(id);
+}
+
+// Makes camera photos smaller (max 1280 px) so the PDF stays small enough to email.
+function shrinkImage(file, maxSide = 1280) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const width = Math.round(img.naturalWidth * scale);
+      const height = Math.round(img.naturalHeight * scale);
+      const canvas = el("canvas", { width, height });
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => (blob ? resolve({ blob, width, height }) : reject(new Error("Foto-Fehler / Photo error"))),
+        "image/jpeg",
+        0.75,
+      );
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Foto konnte nicht gelesen werden / Could not read photo"));
+    };
+    img.src = url;
+  });
+}
+
+async function addPhotos(item, files) {
+  for (const file of files) {
+    const { blob, width, height } = await shrinkImage(file);
+    const ph = { id: crypto.randomUUID(), protocolId: current.id, data: blob, width, height };
+    await db.putPhoto(ph);
+    await cachePhoto(ph);
+    item.photos.push(ph.id);
+  }
+  save();
+}
+
+// Thumbnails + "add photo" button under a topic or action item.
+function photoRow(kind, item) {
+  item.photos ||= [];
+  const row = el("div", { class: "photos" });
+
+  item.photos.forEach((id, j) => {
+    const ph = photoCache.get(id);
+    if (!ph) return;
+    const thumb = el("div", { class: "thumb" });
+    const img = el("img", { src: ph.url, alt: "" });
+    img.addEventListener("click", () => openViewer(ph.url));
+    const del = el("button", { type: "button", class: "thumb-del", "aria-label": "Foto löschen / Delete photo" }, "×");
+    del.addEventListener("click", () => {
+      if (!confirm("Foto löschen? / Delete photo?")) return;
+      item.photos.splice(j, 1);
+      forgetPhoto(id);
+      renderItems(kind);
+      save();
+    });
+    thumb.append(img, del);
+    row.append(thumb);
+  });
+
+  // The iPhone offers "Take Photo" or "Photo Library" for this input.
+  const input = el("input", { type: "file", accept: "image/*", multiple: "", hidden: "" });
+  const add = el("button", { type: "button", class: "add-photo" }, "📷 Foto / Photo");
+  add.addEventListener("click", () => input.click());
+  input.addEventListener("change", async () => {
+    const files = [...input.files];
+    if (!files.length) return;
+    add.disabled = true;
+    add.textContent = "…";
+    try {
+      await addPhotos(item, files);
+    } catch (e) {
+      alert(e.message);
+    }
+    renderItems(kind);
+  });
+  row.append(add, input);
+  return row;
+}
+
+function openViewer(url) {
+  $("#viewer img").src = url;
+  $("#viewer").hidden = false;
+}
+
+// ---------- Signatures ----------
+
+// Sizes the canvas to the screen and redraws a saved signature.
+function drawSignature(canvas) {
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * ratio;
+  canvas.height = canvas.clientHeight * ratio;
+  const ctx = canvas.getContext("2d");
+  ctx.lineWidth = 2.5 * ratio;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111";
+  const saved = current.signatures[canvas.dataset.sig];
+  if (saved) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.src = saved;
+  }
+}
+
+// Lets you sign with a finger on the canvas.
+function setupSignaturePad(canvas) {
+  const ctx = canvas.getContext("2d");
+  let last = null;
+  let moved = false;
+  const point = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [((e.clientX - r.left) * canvas.width) / r.width, ((e.clientY - r.top) * canvas.height) / r.height];
+  };
+  canvas.addEventListener("pointerdown", (e) => {
+    last = point(e);
+    moved = false;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!last) return;
+    const p = point(e);
+    ctx.beginPath();
+    ctx.moveTo(...last);
+    ctx.lineTo(...p);
+    ctx.stroke();
+    last = p;
+    moved = true;
+  });
+  const end = () => {
+    if (last && moved) {
+      current.signatures[canvas.dataset.sig] = canvas.toDataURL("image/png");
+      save();
+    }
+    last = null;
+  };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
 }
 
 // ---------- PDF ----------
@@ -373,6 +569,29 @@ function buildPdf(p, s) {
     y += 2;
   }
 
+  // Photos two per row, each up to 65 mm high. The caption stays with the first row.
+  function photos(ids, indent = 0, caption = "") {
+    const list = ids.map((id) => [id, photoCache.get(id)]).filter(([, ph]) => ph && ph.bytes);
+    const gap = 5, boxW = (W - indent - gap) / 2, boxH = 65;
+    for (let i = 0; i < list.length; i += 2) {
+      const row = list.slice(i, i + 2).map(([id, ph]) => {
+        const scale = Math.min(boxW / ph.width, boxH / ph.height);
+        return { id, ph, w: ph.width * scale, h: ph.height * scale };
+      });
+      const rowH = Math.max(...row.map((r) => r.h));
+      if (i === 0 && caption) {
+        fits(lineH(9.5) + 1 + rowH + 3);
+        paragraph(caption, { size: 9.5, style: "bold", indent });
+        y += 1;
+      }
+      fits(rowH + 3);
+      row.forEach((r, col) => {
+        doc.addImage(r.ph.bytes, "JPEG", M + indent + col * (boxW + gap), y, r.w, r.h, r.id, "FAST");
+      });
+      y += rowH + 3;
+    }
+  }
+
   // Title
   font(18, "bold");
   doc.setTextColor(...BRAND);
@@ -423,7 +642,7 @@ function buildPdf(p, s) {
 
   // Topics and findings
   heading("Themen & Feststellungen / Topics & findings");
-  const topics = p.topics.filter((t) => t.title.trim() || t.note.trim() || t.result);
+  const topics = p.topics.filter((t) => t.title.trim() || t.note.trim() || t.result || hasPhotos(t));
   if (!topics.length) paragraph("–");
   topics.forEach((t, i) => {
     paragraph(`${i + 1}. ${t.title.trim() || "–"}`, { style: "bold" });
@@ -434,12 +653,13 @@ function buildPdf(p, s) {
       });
     }
     if (t.note.trim()) paragraph(t.note.trim(), { indent: 5 });
+    if (hasPhotos(t)) { y += 1; photos(t.photos, 5); }
     y += 2;
   });
 
   // Action items
   heading("Maßnahmen / Action items");
-  const actions = p.actions.filter((a) => a.task.trim());
+  const actions = p.actions.filter((a) => a.task.trim() || hasPhotos(a));
   if (actions.length) {
     table(
       [
@@ -448,8 +668,18 @@ function buildPdf(p, s) {
         { title: "Wer / Who", w: 42 },
         { title: "Bis / Due", w: 28 },
       ],
-      actions.map((a, i) => [String(i + 1), a.task, a.who, a.due ? fmtDate(a.due) : "–"]),
+      actions.map((a, i) => [
+        String(i + 1),
+        a.task + (hasPhotos(a) ? "\n(Fotos unten / photos below)" : ""),
+        a.who,
+        a.due ? fmtDate(a.due) : "–",
+      ]),
     );
+    actions.forEach((a, i) => {
+      if (!hasPhotos(a)) return;
+      photos(a.photos, 0, `Fotos zu Maßnahme ${i + 1} / Photos for action item ${i + 1}`);
+      y += 2;
+    });
   } else paragraph("Keine / None");
 
   // Remarks
@@ -458,13 +688,20 @@ function buildPdf(p, s) {
     paragraph(p.remarks.trim());
   }
 
-  // Signature lines
-  fits(32);
-  y += 18;
+  // Signatures: the drawn signature sits on the line
+  const sig = p.signatures || {};
+  const sigW = 80, sigH = 22;
+  fits(sigH + 16);
+  y += sigH + 6;
   doc.setDrawColor(0);
   doc.setLineWidth(0.3);
-  const sigW = 80;
-  [[M, s.name], [M + W - sigW, ""]].forEach(([x, name]) => {
+  [[M, s.name, sig.mine], [M + W - sigW, sig.otherName, sig.other]].forEach(([x, name, image]) => {
+    if (image) {
+      const props = doc.getImageProperties(image);
+      const scale = Math.min(sigW / props.width, sigH / props.height);
+      const [w, h] = [props.width * scale, props.height * scale];
+      doc.addImage(image, "PNG", x, y - h - 1, w, h, undefined, "FAST"); // "FAST" = compressed
+    }
     doc.line(x, y, x + sigW, y);
     font(8);
     doc.setTextColor(110);
@@ -495,6 +732,17 @@ async function sharePdf(blob, fileName) {
       return;
     } catch (e) {
       if (e.name === "AbortError") return; // user closed the share sheet
+      if (e.name === "NotAllowedError") {
+        // Making a big PDF took too long for the iPhone to count it as "your tap",
+        // so show a button that shares the finished PDF with one more tap.
+        const btn = $("#btn-share");
+        btn.hidden = false;
+        btn.onclick = () => {
+          btn.hidden = true;
+          navigator.share({ files: [file] }).catch(() => {});
+        };
+        return;
+      }
     }
   }
   // Fallback (e.g. on a computer): download the file.
@@ -576,6 +824,17 @@ async function init() {
     });
   }
 
+  document.querySelectorAll("canvas.sig").forEach(setupSignaturePad);
+  for (const btn of document.querySelectorAll("[data-clear]")) {
+    btn.addEventListener("click", () => {
+      current.signatures[btn.dataset.clear] = null;
+      drawSignature($(`canvas[data-sig="${btn.dataset.clear}"]`));
+      save();
+    });
+  }
+  $("#f-other-name").addEventListener("input", () => { current.signatures.otherName = $("#f-other-name").value; save(); });
+  $("#viewer").addEventListener("click", () => { $("#viewer").hidden = true; });
+
   $("#btn-new").addEventListener("click", newProtocol);
   $("#btn-pdf").addEventListener("click", createPdf);
   $("#btn-settings").addEventListener("click", openSettings);
@@ -583,12 +842,15 @@ async function init() {
     if (!confirm(`${current.no} löschen? / Delete?`)) return;
     clearTimeout(saveTimer);
     await db.deleteProtocol(current.id);
+    await db.deletePhotosOf(current.id);
+    clearPhotoCache();
     current = null;
     await renderProtocolList();
     show("list");
   });
   $("#btn-back").addEventListener("click", async () => {
     if (current) await saveNow();
+    clearPhotoCache();
     current = null;
     await renderProtocolList();
     show("list");
