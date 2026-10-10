@@ -9,16 +9,17 @@ Built for FTTx site management (project LAHLU01, Lahnau).
 - **New protocol** with an automatic number, e.g. `LAHLU01-2026-001`
 - Project, type, date, time, location
 - Attendees (names you used before are suggested, company and role are filled in)
-- Topics and findings, each marked OK or defect, with a note
-- Action items: what, who, by when
+- Topics and findings, each marked OK or defect, with a note and photos
+- Action items: what, who, by when, with photos
 - Remarks
+- Finger signatures (you and one attendee)
 - **Create & share PDF**: opens the iPhone share sheet (Mail, WhatsApp, Save to Files)
 - Saves automatically on the phone and works without signal
 
 ## Plan
 
 1. Form, saving on the phone, PDF ✅
-2. Photos and finger signatures
+2. Photos and finger signatures ✅
 3. Send each finished protocol to Smartsheet (one row per protocol, PDF attached)
 4. Extras: follow-up protocol that copies open action items
 
